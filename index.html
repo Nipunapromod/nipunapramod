@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>YouTube Link Extractor</title>
+  <style>
+    :root{--bg:#0f1724;--card:#0b1220;--muted:#9aa4b2;--accent:#3b82f6;--glass: rgba(255,255,255,0.03)}
+    html,body{height:100%;margin:0;font-family:Inter,ui-sans-serif,system-ui,Segoe UI,Roboto,"Helvetica Neue",Arial;}
+    body{background:linear-gradient(180deg,#071028 0%, #071128 100%);color:#e6eef6;display:flex;align-items:center;justify-content:center;padding:28px}
+    .card{width:100%;max-width:820px;padding:22px;border-radius:12px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));box-shadow: 0 6px 30px rgba(2,6,23,0.7)}
+    h1{margin:0 0 8px;font-size:20px}
+    p.lead{margin:0 0 18px;color:var(--muted);font-size:14px}
+    textarea,input{width:100%;box-sizing:border-box;border-radius:8px;padding:12px;border:1px solid rgba(255,255,255,0.04);background:var(--card);color:inherit;font-size:14px;outline:none}
+    textarea{min-height:90px;resize:vertical}
+    .row{display:flex;gap:10px;margin-top:12px}
+    .btn{padding:10px 14px;border-radius:8px;border:0;background:var(--accent);color:white;cursor:pointer;font-weight:600}
+    .btn.ghost{background:transparent;border:1px solid rgba(255,255,255,0.06)}
+    .result{margin-top:16px;padding:12px;border-radius:10px;background:var(--glass);border:1px solid rgba(255,255,255,0.02)}
+    .muted{color:var(--muted);font-size:13px}
+    .links{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+    .link-item{display:flex;gap:8px;align-items:center;justify-content:space-between;background:rgba(255,255,255,0.02);padding:8px;border-radius:8px}
+    .small{font-size:13px;color:#cfe6ff}
+    .hint{margin-top:10px;color:var(--muted);font-size:13px}
+    footer{margin-top:14px;color:var(--muted);font-size:12px;text-align:right}
+    @media (max-width:520px){ .row{flex-direction:column} }
+  </style>
+</head>
+<body>
+  <div class="card" role="main">
+    <h1>YouTube Link Extractor</h1>
+    <p class="lead">Paste any YouTube URL (watch link, embed, youtu.be, or the YouTube API/watchtime request). The page will extract the video ID and give direct links.</p>
+
+    <label class="muted" for="input">Paste URL or text containing a YouTube ID</label>
+    <textarea id="input" placeholder="e.g. https://www.youtube.com/watch?v=_LZpIyLycA8 or that long watchtime API request..."></textarea>
+
+    <div class="row">
+      <button class="btn" id="extractBtn">Extract</button>
+      <button class="btn ghost" id="pasteBtn" title="Try reading clipboard">Paste from clipboard</button>
+      <button class="btn ghost" id="clearBtn" title="Clear input">Clear</button>
+    </div>
+
+    <div id="resultArea" class="result" aria-live="polite" hidden>
+      <div id="noResult" class="muted">No video ID found yet.</div>
+
+      <div id="found" hidden>
+        <div class="small">Video ID</div>
+        <div style="display:flex;gap:12px;align-items:center;margin-top:6px">
+          <strong id="videoId" style="font-size:16px"></strong>
+          <div style="margin-left:auto;display:flex;gap:8px">
+            <button class="btn ghost" id="copyIdBtn">Copy ID</button>
+            <button class="btn" id="openWatchBtn">Open Watch URL</button>
+          </div>
+        </div>
+
+        <div class="links" id="linksBlock">
+          <!-- populated by JS -->
+        </div>
+
+        <div class="hint">Examples: regular watch URLs, short youtu.be links, embed URLs, or APIs that include <code>docid</code> or <code>v</code> will work.</div>
+      </div>
+    </div>
+
+    <footer>Quick and local — nothing is uploaded. ✨</footer>
+  </div>
+
+<script>
+/*
+  YouTube Link Extractor
+  - Looks for YouTube video IDs in input text.
+  - Supports: watch?v=, v=, docid= (from API links), embed/, youtu.be/, /vi/, other common patterns.
+  - Video IDs are usually 11 characters: [A-Za-z0-9_-]{11}
+*/
+
+const input = document.getElementById('input');
+const extractBtn = document.getElementById('extractBtn');
+const pasteBtn = document.getElementById('pasteBtn');
+const clearBtn = document.getElementById('clearBtn');
+const resultArea = document.getElementById('resultArea');
+const noResult = document.getElementById('noResult');
+const found = document.getElementById('found');
+const videoIdEl = document.getElementById('videoId');
+const linksBlock = document.getElementById('linksBlock');
+const copyIdBtn = document.getElementById('copyIdBtn');
+const openWatchBtn = document.getElementById('openWatchBtn');
+
+function extractVideoId(text){
+  if(!text) return null;
+  // Try parsing as URL first
+  try {
+    // find the first probable URL-like substring to avoid throwing on long text
+    const urlMatch = text.match(/https?:\/\/[^\s'"]+/);
+    if(urlMatch){
+      const u = new URL(urlMatch[0]);
+      // query params like v= or video_id or docid
+      const params = new URLSearchParams(u.search);
+      const paramCandidates = ['v','video_id','docid','doc_id','id'];
+      for(const p of paramCandidates){
+        if(params.has(p)){
+          const val = params.get(p);
+          const maybe = val.split(/[,&?#]/)[0];
+          const id = findIdInString(maybe);
+          if(id) return id;
+        }
+      }
+      // path forms
+      // youtu.be/<id>
+      if(u.hostname.includes('youtu.be')){
+        const pathId = u.pathname.replace(/^\/+|\/+$/g,'').split('/')[0];
+        const id = findIdInString(pathId);
+        if(id) return id;
+      }
+      // /embed/<id> , /v/<id> , /vi/<id>
+      const pathParts = u.pathname.split('/').filter(Boolean);
+      for(let i=0;i<pathParts.length;i++){
+        if(['embed','v','vi','shorts'].includes(pathParts[i]) && pathParts[i+1]){
+          const id = findIdInString(pathParts[i+1]);
+          if(id) return id;
+        }
+      }
+      // fallback: check entire URL string for 11-char id
+      const idFromUrl = findIdInString(u.href);
+      if(idFromUrl) return idFromUrl;
+    }
+  } catch(e){
+    // not a valid URL - continue to regex search below
+  }
+
+  // General search for YouTube-like 11-char IDs in the full text
+  // standard YouTube ID pattern is 11 chars from A-Za-z0-9_- but sometimes other tokens appear
+  const id = findIdInString(text);
+  return id;
+}
+
+function findIdInString(s){
+  if(!s) return null;
+  // common tokens to look for like docid=_LZpIyLycA8 or watch?v=_LZpIyLycA8
+  // We look for tokens of length 11 that match allowed characters.
+  const re = /([A-Za-z0-9_-]{11})/g;
+  let match;
+  // prefer those preceded by v= or docid= or youtu.be/ or /embed/
+  const prioritized = s.match(/(?:v=|docid=|doc_id=|video_id=|youtu\.be\/|\/embed\/|\/v\/|\/vi\/)([A-Za-z0-9_-]{11})/i);
+  if(prioritized) return prioritized[1];
+  // else pick the first 11-char token that looks like an ID and not part of a longer token of letters/digits
+  while((match = re.exec(s)) !== null){
+    const token = match[1];
+    // ensure not part of a longer alnum string (character before/after not alnum or absent)
+    const before = s[match.index - 1];
+    const after = s[match.index + token.length];
+    const okBefore = !before || /[^A-Za-z0-9_-]/.test(before);
+    const okAfter = !after || /[^A-Za-z0-9_-]/.test(after);
+    if(okBefore && okAfter) return token;
+  }
+  return null;
+}
+
+function renderResult(id){
+  resultArea.hidden = false;
+  if(!id){
+    noResult.hidden = false;
+    found.hidden = true;
+    return;
+  }
+  noResult.hidden = true;
+  found.hidden = false;
+  videoIdEl.textContent = id;
+
+  // Build useful links
+  linksBlock.innerHTML = '';
+  const watch = `https://www.youtube.com/watch?v=${id}`;
+  const short = `https://youtu.be/${id}`;
+  const embed = `https://www.youtube.com/embed/${id}`;
+  const nocookie = `https://www.youtube-nocookie.com/embed/${id}`;
+
+  const rows = [
+    {label:'Watch page', url: watch},
+    {label:'Short link', url: short},
+    {label:'Embed (iframe)', url: embed},
+    {label:'Embed (nocookie)', url: nocookie},
+  ];
+
+  rows.forEach(r=>{
+    const el = document.createElement('div');
+    el.className = 'link-item';
+    el.innerHTML = `<div style="display:flex;flex-direction:column"><div style="font-weight:600">${r.label}</div><div class="muted" style="font-size:12px">${r.url}</div></div>`;
+    const actions = document.createElement('div');
+    actions.style.display = 'flex';
+    actions.style.gap = '8px';
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'btn ghost';
+    copyBtn.textContent = 'Copy';
+    copyBtn.onclick = async ()=> {
+      await navigator.clipboard.writeText(r.url).catch(()=>alert('Copy failed — allow clipboard access.'));
+      copyBtn.textContent = 'Copied';
+      setTimeout(()=>copyBtn.textContent='Copy',1200);
+    };
+    const openBtn = document.createElement('button');
+    openBtn.className = 'btn';
+    openBtn.textContent = 'Open';
+    openBtn.onclick = ()=> window.open(r.url, '_blank', 'noopener');
+    actions.appendChild(copyBtn);
+    actions.appendChild(openBtn);
+    el.appendChild(actions);
+    linksBlock.appendChild(el);
+  });
+
+  // buttons
+  copyIdBtn.onclick = async ()=>{
+    await navigator.clipboard.writeText(id).catch(()=>alert('Copy failed — allow clipboard access.'));
+    copyIdBtn.textContent = 'Copied';
+    setTimeout(()=>copyIdBtn.textContent='Copy ID',1200);
+  };
+  openWatchBtn.onclick = ()=> window.open(watch, '_blank', 'noopener');
+}
+
+extractBtn.addEventListener('click', ()=>{
+  const txt = input.value.trim();
+  const id = extractVideoId(txt);
+  renderResult(id);
+});
+
+clearBtn.addEventListener('click', ()=>{
+  input.value='';
+  resultArea.hidden = true;
+});
+
+pasteBtn.addEventListener('click', async ()=>{
+  try {
+    const clip = await navigator.clipboard.readText();
+    input.value = clip;
+    const id = extractVideoId(clip);
+    renderResult(id);
+  } catch(e){
+    alert('Unable to read clipboard. Paste manually or give clipboard permission.');
+  }
+});
+
+// Allow pressing Ctrl+Enter to extract
+input.addEventListener('keydown', (e)=> {
+  if(e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+    extractBtn.click();
+  }
+});
+
+// Optionally auto-extract when user pastes content
+input.addEventListener('paste', (e)=>{
+  setTimeout(()=> { // allow paste to happen first
+    const id = extractVideoId(input.value || '');
+    if(id) renderResult(id);
+  }, 50);
+});
+</script>
+  <h1>Created By Nipuna</h1>
+</body>
+</html>
