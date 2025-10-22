@@ -4,6 +4,11 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>YouTube Link Extractor + Thumbnail</title>
+
+  <!-- Favicon: put a logo file named "logo.png" or "logo.svg" in the repository root
+       or change the path below to point to your logo file -->
+  <link rel="icon" href="logo.png" />
+
   <style>
     :root {
       --bg: #0f1724;
@@ -30,7 +35,26 @@
       background: rgba(255, 255, 255, 0.05);
       box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
     }
-    h1 { margin: 0 0 10px; font-size: 1.6rem; }
+
+    /* Header row with logo + title */
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 8px;
+    }
+    .logo {
+      width: 56px;
+      height: 56px;
+      border-radius: 10px;
+      object-fit: cover;
+      background: rgba(255,255,255,0.03);
+      flex: 0 0 56px;
+    }
+
+    h1 { margin: 0; font-size: 1.6rem; }
+    p.lead { margin: 4px 0 18px; color: var(--muted); }
+
     p { margin: 0 0 18px; color: var(--muted); }
     textarea {
       width: 100%;
@@ -71,12 +95,25 @@
       text-decoration: none;
     }
     a:hover { text-decoration: underline; }
+
+    /* Responsive tweaks */
+    @media (max-width: 520px) {
+      .card-header { gap: 10px; }
+      .logo { width: 44px; height: 44px; flex: 0 0 44px; }
+      h1 { font-size: 1.2rem; }
+    }
   </style>
 </head>
 <body>
   <div class="card">
-    <h1>YouTube Link Extractor 🔗</h1>
-    <p>Paste any YouTube or API link below, then click <strong>Extract</strong> to get the video link and thumbnail.</p>
+    <div class="card-header">
+      <!-- Site logo: replace "logo.png" with your logo path (logo.svg or full URL also fine) -->
+      <img src="logo.png" alt="Site logo" class="logo" onerror="this.style.display='none'">
+      <div>
+        <h1>YouTube Link Extractor 🔗</h1>
+        <p class="lead">Paste any YouTube or API link below, then click <strong>Extract</strong> to get the video link and thumbnail.</p>
+      </div>
+    </div>
 
     <textarea id="input" placeholder="Paste YouTube link or watchtime URL..."></textarea>
     <div style="margin-top:12px;">
